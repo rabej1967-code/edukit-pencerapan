@@ -440,11 +440,7 @@ select.fc{background:#fff}
       </div>
       <div class="fr">
         <div class="fg"><label class="fl">Kata Laluan</label>
-          <div style="position:relative">
-            <input class="fc" type="password" id="u-pw" placeholder="Kosongkan jika tidak mahu tukar" style="padding-right:36px">
-            <button type="button" id="u-pw-eye" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:.9rem">👁</button>
-          </div>
-          <div id="u-pw-hint" style="font-size:.67rem;color:var(--teal);margin-top:3px;display:none">✅ Kata laluan ditetapkan. Kosongkan jika tidak mahu tukar.</div>
+          <div style="font-size:.72rem;color:var(--muted);padding:8px 0">Dijana automatik (random) — dipaparkan selepas simpan.</div>
         </div>
         <div class="fg"><label class="fl">Peranan <span>*</span></label>
           <select class="fc" id="u-rl"><option value="pentadbir">Pentadbir</option><option value="admin">Admin</option><option value="ketua">Ketua Panitia</option></select>
@@ -477,6 +473,77 @@ select.fc{background:#fff}
 </div>
 
 <script>
+// ══════════════════════════════════════════════
+// SUPABASE CONFIG + TENANT (SEKOLAH)
+// ══════════════════════════════════════════════
+var SB_URL='https://aowzftmdriukxbltjtpm.supabase.co';
+var SB_ANON_KEY='PASTE_ANON_KEY_DI_SINI'; // <-- ganti dengan anon key projek Supabase
+var SB_FN_ADMIN=SB_URL+'/functions/v1/skas-admin';
+var urlParams=new URLSearchParams(window.location.search);
+var KOD_SEKOLAH=(urlParams.get('t')||'').trim().toUpperCase();
+function sbMakeEmail(username,kodSekolah){
+  var u=(username||'').trim().toLowerCase().replace(/[^a-z0-9_.]/g,'');
+  var k=(kodSekolah||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');
+  return u+'.'+k+'@cikgukita.internal';
+}
+var SK_SESS=null;
+var SK_SKEY='sk_sess_v1_'+(KOD_SEKOLAH||'nokod');
+function loadSKSess(){try{return JSON.parse(localStorage.getItem(SK_SKEY))}catch(e){return null}}
+function saveSKSess(){localStorage.setItem(SK_SKEY,JSON.stringify(SK_SESS))}
+function clearSKSess(){localStorage.removeItem(SK_SKEY)}
+async function sbFetch(path,opts){
+  opts=opts||{};
+  var headers=Object.assign({'apikey':SB_ANON_KEY,'Content-Type':'application/json'},opts.headers||{});
+  headers['Authorization']='Bearer '+((SK_SESS&&SK_SESS.access_token)?SK_SESS.access_token:SB_ANON_KEY);
+  return fetch(SB_URL+path,Object.assign({},opts,{headers:headers}));
+}
+async function skAdmFn(action,payload){
+  var res=await fetch(SB_FN_ADMIN,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SK_SESS.access_token,'apikey':SB_ANON_KEY},
+    body:JSON.stringify(Object.assign({action:action},payload||{}))
+  });
+  var d=await res.json();
+  if(!res.ok) throw new Error(d.error||'Ralat pelayan');
+  return d;
+}
+async function skSaveSchoolData(){
+  if(!CU) return;
+  try{
+    await sbFetch('/rest/v1/skas_school_data?kod_sekolah=eq.'+KOD_SEKOLAH, {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({gurus:D.gurus||[], ceraps:D.ceraps||[]})
+    });
+  }catch(e){}
+}
+async function skSaveSekolahInfo(info){
+  if(!CU) return;
+  try{
+    await sbFetch('/rest/v1/skas_school_data?kod_sekolah=eq.'+KOD_SEKOLAH, {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({sekolah_info: info})
+    });
+  }catch(e){}
+}
+async function skLoadSchoolData(){
+  try{
+    var res = await sbFetch('/rest/v1/skas_school_data?kod_sekolah=eq.'+KOD_SEKOLAH+'&select=gurus,ceraps,sekolah_info', {method:'GET'});
+    if(res.ok){
+      var rows = await res.json();
+      if(rows.length){
+        D.gurus = rows[0].gurus || [];
+        D.ceraps = rows[0].ceraps || [];
+        window._SK_SEKOLAH_INFO = rows[0].sekolah_info || {};
+      } else {
+        await sbFetch('/rest/v1/skas_school_data', {
+          method:'POST', headers:{'Prefer':'return=minimal'},
+          body: JSON.stringify({kod_sekolah: KOD_SEKOLAH, gurus: [], ceraps: [], sekolah_info: {}})
+        });
+        window._SK_SEKOLAH_INFO = {};
+      }
+    }
+  }catch(e){ window._SK_SEKOLAH_INFO = {}; }
+}
 (function(){
 'use strict';
 Chart.register(ChartDataLabels);
@@ -554,13 +621,7 @@ var MAX=(function(){var t=0;for(var i=0;i<A.length;i++)t+=A[i].s.length*4;return
 var COLS=['#0ea5a0','#f5a623','#8b5cf6','#ef4444','#22c55e','#3b82f6','#f97316','#ec4899','#14b8a6','#a855f7'];
 
 // ── STATE ────────────────────────────────────────────────────
-var USERS=[
-  {id:'u1',nm:'Pengetua Hj. Azlan',   un:'pentadbir',  pw:'admin123',role:'pentadbir',pan:null},
-  {id:'u2',nm:'Pn. Rohaida GPK',      un:'admin',      pw:'admin123',role:'admin',    pan:null},
-  {id:'u3',nm:'En. Ahmad Ketua BM',   un:'ketua_bm',   pw:'ketua123',role:'ketua',   pan:'Bahasa Melayu'},
-  {id:'u4',nm:'Pn. Siti Ketua Math',  un:'ketua_math', pw:'ketua123',role:'ketua',   pan:'Matematik'},
-  {id:'u5',nm:'En. Rajan Ketua Sains',un:'ketua_sains',pw:'ketua123',role:'ketua',   pan:'Sains'}
-];
+var USERS=[]; // Diurus melalui Supabase Auth (Edge Function skas-admin)
 var CU=null;
 var D={gurus:[],ceraps:[],sc:{}};
 var unsaved=false;
@@ -638,28 +699,15 @@ function dlFile(content,mime,fname){
 
 // ── SAVE / LOAD ──────────────────────────────────────────────
 function saveData(){
-  try{
-    var payload={gurus:D.gurus,ceraps:D.ceraps,at:new Date().toISOString()};
-    localStorage.setItem(LS_KEY,JSON.stringify(payload));
-    unsaved=false;
-    updSv();
-    toast('✅ Data berjaya disimpan!','ok');
-  }catch(e){toast('❌ Gagal simpan: '+e.message,'err');}
+  skSaveSchoolData();
+  unsaved=false;
+  updSv();
+  toast('✅ Data berjaya disimpan!','ok');
 }
 function loadData(){
-  try{
-    var raw=localStorage.getItem(LS_KEY);
-    if(raw){
-      var d=JSON.parse(raw);
-      if(d.gurus)D.gurus=d.gurus;
-      if(d.ceraps)D.ceraps=d.ceraps;
-      unsaved=false;updSv();return true;
-    }
-  }catch(e){}
+  if(D.gurus && D.gurus.length){ unsaved=false; updSv(); return true; }
   return false;
 }
-
-// ── SEKOLAH ──────────────────────────────────────────────────
 function saveSkul(){
   try{
     var info={
@@ -669,7 +717,7 @@ function saveSkul(){
       daerah:document.getElementById('sk-daerah').value.trim(),
       negeri:document.getElementById('sk-negeri').value
     };
-    localStorage.setItem(LS_SKUL,JSON.stringify(info));
+    skSaveSekolahInfo(info);
     updSkSv(false);
     if(info.nama)document.getElementById('sb-skul').textContent=info.nama;
     toast('✅ Maklumat sekolah disimpan!','ok');
@@ -677,17 +725,14 @@ function saveSkul(){
 }
 function loadSkul(){
   try{
-    var raw=localStorage.getItem(LS_SKUL);
-    if(raw){
-      var info=JSON.parse(raw);
-      document.getElementById('sk-nama').value  =info.nama  ||'';
-      document.getElementById('sk-kod').value   =info.kod   ||'';
-      document.getElementById('sk-alamat').value=info.alamat||'';
-      document.getElementById('sk-daerah').value=info.daerah||'';
-      document.getElementById('sk-negeri').value=info.negeri||'';
-      if(info.nama)document.getElementById('sb-skul').textContent=info.nama;
-      updSkSv(false);
-    }
+    var info=window._SK_SEKOLAH_INFO||{};
+    document.getElementById('sk-nama').value  =info.nama  ||'';
+    document.getElementById('sk-kod').value   =info.kod   ||'';
+    document.getElementById('sk-alamat').value=info.alamat||'';
+    document.getElementById('sk-daerah').value=info.daerah||'';
+    document.getElementById('sk-negeri').value=info.negeri||'';
+    if(info.nama)document.getElementById('sb-skul').textContent=info.nama;
+    updSkSv(false);
   }catch(e){}
 }
 function updSkSv(dirty){
@@ -700,8 +745,7 @@ function updSkSv(dirty){
 // ── EXPORT JSON ──────────────────────────────────────────────
 function expJSON(){
   try{
-    var info={nama:'',kod:'',alamat:'',daerah:'',negeri:''};
-    try{var raw=localStorage.getItem(LS_SKUL);if(raw)info=JSON.parse(raw);}catch(e2){}
+    var info=window._SK_SEKOLAH_INFO||{nama:'',kod:'',alamat:'',daerah:'',negeri:''};
     var payload={
       app:'SK@S Standard 4',
       sekolah:info,
@@ -727,7 +771,9 @@ function impJSON(e){
       if(!confirm('Import data dari "'+f.name+'"?\n\nAmaran: Semua data semasa akan digantikan.'))return;
       D.gurus=d.gurus;D.ceraps=d.ceraps;
       if(d.sekolah){
-        try{localStorage.setItem(LS_SKUL,JSON.stringify(d.sekolah));loadSkul();}catch(e2){}
+        window._SK_SEKOLAH_INFO=d.sekolah;
+        skSaveSekolahInfo(d.sekolah);
+        loadSkul();
       }
       saveData();
       toast('📥 Import berjaya! Data telah dipulihkan.','ok');
@@ -836,7 +882,20 @@ function printCerap(){
     +'<div style="font-size:10px;color:#94a3b8">Nama: '+(pen||'_________________________')+'</div>'
     +'<div style="font-size:10px;color:#94a3b8;margin-top:4px">Tarikh: '+fd(tar)+'</div></div></div>'
     +'</div>'
-    +'<div class="ft">SK@S Standard 4 | Borang Pencerapan | '+now+'</div></body></html>';
+    +'<div class="ft">SK@S Standard 4 | Borang Pencerapan | '+now+'</div><script>
+// ── KEEP-ALIVE — pastikan Supabase tidak tidur ──────────────
+(function(){
+  var _kaUrl = typeof SUPA_URL !== 'undefined' ? SUPA_URL : (typeof SB_URL !== 'undefined' ? SB_URL : '');
+  var _kaKey = typeof SUPA_KEY !== 'undefined' ? SUPA_KEY : (typeof SB_KEY !== 'undefined' ? SB_KEY : '');
+  if (!_kaUrl || !_kaKey) return;
+  if (window._ekKaTimer) clearInterval(window._ekKaTimer);
+  window._ekKaTimer = setInterval(function(){
+    fetch(_kaUrl+'/rest/v1/', {headers:{'apikey':_kaKey,'Authorization':'Bearer '+_kaKey}}).catch(function(){});
+  }, 4*60*1000);
+  console.log('EduKit keep-alive started');
+})();
+</script>
+</body></html>';
 
   var w=window.open('','_blank');
   if(w){w.document.open();w.document.write(html);w.document.close();}
@@ -851,8 +910,8 @@ function expPDF(){
     var now=new Date().toLocaleDateString('ms-MY',{day:'2-digit',month:'long',year:'numeric'});
     var skNama='',skAlamat='',skDaerah='',skNegeri='';
     try{
-      var raw=localStorage.getItem(LS_SKUL);
-      if(raw){var si=JSON.parse(raw);skNama=si.nama||'';skAlamat=si.alamat||'';skDaerah=si.daerah||'';skNegeri=si.negeri||'';}
+      var si=window._SK_SEKOLAH_INFO||{};
+      skNama=si.nama||'';skAlamat=si.alamat||'';skDaerah=si.daerah||'';skNegeri=si.negeri||'';
     }catch(e2){}
     if(!skNama)skNama='SK@S Standard 4';
     var excel=0;for(var i=0;i<cs.length;i++)if(cs[i].pct>=90)excel++;
@@ -1022,22 +1081,87 @@ function openMo(id){document.getElementById(id).classList.add('open');}
 function closeMo(id){document.getElementById(id).classList.remove('open');}
 
 // ── LOGIN ────────────────────────────────────────────────────
-function doLogin(){
+async function skFetchProfile(){
+  try{
+    var res=await sbFetch('/rest/v1/skas_users?select=username,fullname,role,panitia,kod_sekolah,must_change_password&user_id=eq.'+SK_SESS.user_id,{method:'GET'});
+    if(!res.ok) return false;
+    var rows=await res.json();
+    if(!rows.length) return false;
+    var p=rows[0];
+    CU={id:p.username, nm:p.fullname||p.username, role:p.role, pan:p.panitia, must_change_password:p.must_change_password};
+    return true;
+  }catch(e){ return false; }
+}
+async function skRefreshToken(){
+  if(!SK_SESS||!SK_SESS.refresh_token) return false;
+  var res=await sbFetch('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:SK_SESS.refresh_token})});
+  if(!res.ok) return false;
+  var d=await res.json();
+  SK_SESS={access_token:d.access_token,refresh_token:d.refresh_token,user_id:d.user.id};
+  saveSKSess();
+  return true;
+}
+async function skBoot(){
+  if(!KOD_SEKOLAH){
+    document.getElementById('lerr').textContent='URL tiada kod sekolah (?t=KODSEKOLAH). Hubungi admin.';
+    document.getElementById('lerr').style.display='block';
+    return;
+  }
+  SK_SESS=loadSKSess();
+  if(SK_SESS&&SK_SESS.access_token){
+    if(await skFetchProfile()){ if(CU.must_change_password){skForcePwScreen();return;} await startApp(); return; }
+    if(await skRefreshToken()&&await skFetchProfile()){ if(CU.must_change_password){skForcePwScreen();return;} await startApp(); return; }
+  }
+  clearSKSess(); SK_SESS=null; CU=null;
+}
+async function doLogin(){
   var u=document.getElementById('lu').value.trim(),p=document.getElementById('lp').value.trim();
-  var f=null;for(var i=0;i<USERS.length;i++)if(USERS[i].un===u&&USERS[i].pw===p){f=USERS[i];break;}
-  if(!f){document.getElementById('lerr').style.display='block';return;}
-  document.getElementById('lerr').style.display='none';
-  CU=f;startApp();
+  var errEl=document.getElementById('lerr');
+  if(!KOD_SEKOLAH){errEl.textContent='URL tiada kod sekolah (?t=KODSEKOLAH).';errEl.style.display='block';return}
+  if(!u||!p){errEl.style.display='block';return}
+  var email=sbMakeEmail(u,KOD_SEKOLAH);
+  try{
+    var res=await sbFetch('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email:email,password:p})});
+    if(!res.ok){document.getElementById('lerr').style.display='block';return}
+    var d=await res.json();
+    SK_SESS={access_token:d.access_token,refresh_token:d.refresh_token,user_id:d.user.id};
+    saveSKSess();
+    if(!await skFetchProfile()){errEl.textContent='Akaun wujud tapi profil tidak dijumpai. Hubungi admin.';errEl.style.display='block';return}
+    errEl.style.display='none';
+    if(CU.must_change_password){ skForcePwScreen(); return; }
+    startApp();
+  }catch(e){ errEl.style.display='block'; }
 }
 function doLogout(){
   if(unsaved&&!confirm('Ada perubahan belum disimpan. Log keluar?'))return;
-  CU=null;
+  CU=null; SK_SESS=null; clearSKSess();
   document.getElementById('app').style.display='none';
   document.getElementById('ls').style.display='flex';
   document.getElementById('lu').value='';document.getElementById('lp').value='';
   for(var k in CH){try{CH[k].destroy();}catch(e){}delete CH[k];}
 }
-function startApp(){
+function skForcePwScreen(){
+  var scr=document.getElementById('ls');
+  var card=scr.querySelector('.login-card')||scr.querySelector('div');
+  card.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:6px">Set Kata Laluan Baru</div>'+
+    '<div style="font-size:12.5px;color:#64748b;margin-bottom:14px">Kali pertama log masuk — sila tetapkan kata laluan baru.</div>'+
+    '<input id="fpwNew" type="password" placeholder="Kata laluan baru (min. 6 aksara)" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #cbd5e1;margin-bottom:10px">'+
+    '<input id="fpwConf" type="password" placeholder="Sahkan kata laluan" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #cbd5e1;margin-bottom:14px">'+
+    '<button onclick="skForcePwSubmit()" style="width:100%;padding:11px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer">Simpan &amp; Teruskan &rarr;</button>'+
+    '<div id="fpwErr" style="color:#ef4444;font-size:12px;margin-top:8px"></div>';
+}
+async function skForcePwSubmit(){
+  var nw=document.getElementById('fpwNew').value, cf=document.getElementById('fpwConf').value;
+  var err=document.getElementById('fpwErr');
+  if(nw.length<6){err.textContent='Min. 6 aksara.';return}
+  if(nw!==cf){err.textContent='Tidak sepadan.';return}
+  var res=await sbFetch('/auth/v1/user',{method:'PUT',body:JSON.stringify({password:nw})});
+  if(!res.ok){err.textContent='Gagal tukar. Cuba lagi.';return}
+  await sbFetch('/rest/v1/skas_users?user_id=eq.'+SK_SESS.user_id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({must_change_password:false})});
+  location.reload();
+}
+async function startApp(){
+  await skLoadSchoolData();
   document.getElementById('ls').style.display='none';
   document.getElementById('app').style.display='block';
   var col=avc(CU.nm);
@@ -1047,7 +1171,7 @@ function startApp(){
   document.getElementById('nav-rl').textContent=rl+(CU.pan?' – '+CU.pan:'');
   var rc={pentadbir:'rp',admin:'ra',ketua:'rk'}[CU.role];
   document.getElementById('tbbg').innerHTML='<span class="tb-bg '+rc+'">'+rl+(CU.pan?' ('+CU.pan+')':'')+'</span>';
-  if(!loadData())seed();
+  if(!D.gurus.length)seed();
   loadSkul();
   buildSB();goPage('dash');
 }
@@ -1396,50 +1520,70 @@ function rLap(){
 }
 
 // ── PENGURUSAN PENGGUNA ──────────────────────────────────────
-function rUsr(){
+async function rUsr(){
   if(CU.role!=='pentadbir'){document.getElementById('u-tb').innerHTML='<tr><td colspan="5" style="text-align:center;padding:36px;color:var(--muted)">🚫 Akses Ditolak</td></tr>';return;}
+  document.getElementById('u-tb').innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">Memuatkan...</td></tr>';
   var rl={pentadbir:'👑 Pentadbir',admin:'🛡 Admin',ketua:'📚 Ketua Panitia'};
   var rb={pentadbir:'bbn',admin:'bpu',ketua:'ban'};
-  var h='';
-  for(var i=0;i<USERS.length;i++){
-    var u=USERS[i],col=avc(u.nm);
-    h+='<tr><td><div class="nc"><div class="av" style="background:'+col+'">'+ini(u.nm)+'</div><span style="font-weight:600">'+u.nm+'</span></div></td>'
-      +'<td style="font-family:var(--mono);font-size:.74rem">'+u.un+'</td>'
-      +'<td><span class="badge '+rb[u.role]+'">'+rl[u.role]+'</span></td>'
-      +'<td>'+(u.pan?'<span class="badge btn2">'+u.pan+'</span>':'—')+'</td>'
-      +'<td><div class="ag"><button class="btn bs bsm" data-eu="'+u.id+'">✏️</button>'+(u.id!=='u1'?'<button class="btn bd bsm" data-du="'+u.id+'">🗑</button>':'')+'</div></td></tr>';
-  }
-  document.getElementById('u-tb').innerHTML=h;
-  var eu=document.getElementById('u-tb').querySelectorAll('[data-eu]');for(var i=0;i<eu.length;i++)(function(b){b.addEventListener('click',function(){openUModal(b.getAttribute('data-eu'));});}(eu[i]));
-  var du=document.getElementById('u-tb').querySelectorAll('[data-du]');for(var i=0;i<du.length;i++)(function(b){b.addEventListener('click',function(){confDelU(b.getAttribute('data-du'));});}(du[i]));
+  try{
+    var d=await skAdmFn('list_users');
+    window._SK_USERLIST=d.users;
+    var h='';
+    for(var i=0;i<d.users.length;i++){
+      var u=d.users[i],col=avc(u.fullname||u.username);
+      h+='<tr><td><div class="nc"><div class="av" style="background:'+col+'">'+ini(u.fullname||u.username)+'</div><span style="font-weight:600">'+(u.fullname||u.username)+(u.must_change_password?' <small style="color:#f59e0b">(belum set pasword)</small>':'')+'</span></div></td>'
+        +'<td style="font-family:var(--mono);font-size:.74rem">'+u.username+'</td>'
+        +'<td><span class="badge '+rb[u.role]+'">'+rl[u.role]+'</span></td>'
+        +'<td>'+(u.panitia?'<span class="badge btn2">'+u.panitia+'</span>':'—')+'</td>'
+        +'<td><div class="ag"><button class="btn bs bsm" data-eu="'+u.username+'">✏️</button>'+(u.username!==CU.id?'<button class="btn bd bsm" data-du="'+u.username+'">🗑</button>':'')+'</div></td></tr>';
+    }
+    document.getElementById('u-tb').innerHTML=h;
+    var eu=document.getElementById('u-tb').querySelectorAll('[data-eu]');for(var i=0;i<eu.length;i++)(function(b){b.addEventListener('click',function(){openUModal(b.getAttribute('data-eu'));});}(eu[i]));
+    var du=document.getElementById('u-tb').querySelectorAll('[data-du]');for(var i=0;i<du.length;i++)(function(b){b.addEventListener('click',function(){confDelU(b.getAttribute('data-du'));});}(du[i]));
+  }catch(e){ document.getElementById('u-tb').innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#ef4444">Ralat: '+e.message+'</td></tr>'; }
 }
-function openUModal(id){
-  document.getElementById('u-id').value=id||'';
-  document.getElementById('u-nm').value='';document.getElementById('u-un').value='';document.getElementById('u-pw').value='';
-  document.getElementById('u-pw').type='password';document.getElementById('u-pw-eye').textContent='👁';
+function openUModal(username){
+  document.getElementById('u-id').value=username||'';
+  document.getElementById('u-nm').value='';document.getElementById('u-un').value='';
   document.getElementById('u-rl').value='admin';document.getElementById('u-pan').value='Bahasa Melayu';
-  document.getElementById('mu-t').textContent=id?'Edit Pengguna':'Tambah Pengguna';
-  var hint=document.getElementById('u-pw-hint');
-  if(id){for(var i=0;i<USERS.length;i++)if(USERS[i].id===id){var u=USERS[i];document.getElementById('u-nm').value=u.nm;document.getElementById('u-un').value=u.un;document.getElementById('u-rl').value=u.role;if(u.pan)document.getElementById('u-pan').value=u.pan;hint.style.display=u.pw?'block':'none';break;}}
-  else{hint.style.display='none';}
+  document.getElementById('mu-t').textContent=username?'Edit Pengguna':'Tambah Pengguna';
+  var hint=document.getElementById('u-pw-hint'); if(hint) hint.style.display='none';
+  if(username && window._SK_USERLIST){
+    var u=window._SK_USERLIST.find(function(x){return x.username===username;});
+    if(u){
+      document.getElementById('u-nm').value=u.fullname||'';
+      document.getElementById('u-un').value=u.username;
+      document.getElementById('u-rl').value=u.role;
+      if(u.panitia)document.getElementById('u-pan').value=u.panitia;
+    }
+  }
   tglPan();openMo('mo-u');
 }
 function tglPan(){document.getElementById('u-pg').style.display=document.getElementById('u-rl').value==='ketua'?'block':'none';}
-function saveUsr(){
+async function saveUsr(){
   var nm=document.getElementById('u-nm').value.trim(),un=document.getElementById('u-un').value.trim();
-  var pw=document.getElementById('u-pw').value.trim(),role=document.getElementById('u-rl').value;
+  var role=document.getElementById('u-rl').value;
   var pan=role==='ketua'?document.getElementById('u-pan').value:null;
-  var id=document.getElementById('u-id').value;
+  var id=document.getElementById('u-id').value; // username sedia ada (edit) atau kosong (tambah)
   if(!nm||!un){alert('Sila isi nama dan username.');return;}
-  if(!id&&!pw){alert('Sila isi kata laluan.');return;}
-  if(id){for(var i=0;i<USERS.length;i++)if(USERS[i].id===id){var u=USERS[i];u.nm=nm;u.un=un;if(pw)u.pw=pw;u.role=role;u.pan=pan;break;}}
-  else USERS.push({id:uid(),nm:nm,un:un,pw:pw,role:role,pan:pan});
-  closeMo('mo-u');rUsr();
+  try{
+    if(id){
+      await skAdmFn('update_user',{username:id,fullname:nm,role:role,panitia:pan});
+      closeMo('mo-u');rUsr();
+    } else {
+      var d=await skAdmFn('create_user',{username:un,fullname:nm,role:role,panitia:pan});
+      closeMo('mo-u');rUsr();
+      alert('Akaun "'+d.username+'" dicipta.\n\nKata laluan sementara: '+d.password+'\n\nBeri kepada pengguna — wajib tukar pasword bila log masuk kali pertama.');
+    }
+  }catch(e){ alert('Ralat: '+e.message); }
 }
-function confDelU(id){
-  var u=null;for(var i=0;i<USERS.length;i++)if(USERS[i].id===id){u=USERS[i];break;}
-  document.getElementById('cf-msg').innerHTML='Padam akaun <strong>'+(u?u.nm:'')+'</strong>?';
-  document.getElementById('mcf-ok').onclick=function(){USERS=USERS.filter(function(x){return x.id!==id;});closeMo('mo-cf');rUsr();};
+function confDelU(username){
+  var u=window._SK_USERLIST?window._SK_USERLIST.find(function(x){return x.username===username;}):null;
+  document.getElementById('cf-msg').innerHTML='Padam akaun <strong>'+(u?(u.fullname||u.username):username)+'</strong>?';
+  document.getElementById('mcf-ok').onclick=async function(){
+    try{ await skAdmFn('delete_user',{username:username}); closeMo('mo-cf');rUsr(); }
+    catch(e){ alert('Ralat padam: '+e.message); }
+  };
   openMo('mo-cf');
 }
 
@@ -1461,6 +1605,7 @@ function seed(){
 
 // ── EVENT LISTENERS ──────────────────────────────────────────
 window.addEventListener('load',function(){
+  skBoot();
   // Login
   document.getElementById('lbtn').addEventListener('click',doLogin);
   document.getElementById('lu').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
@@ -1499,11 +1644,6 @@ window.addEventListener('load',function(){
   document.getElementById('mu-cl').addEventListener('click',function(){closeMo('mo-u');});
   document.getElementById('mu-sv').addEventListener('click',saveUsr);
   document.getElementById('u-rl').addEventListener('change',tglPan);
-  document.getElementById('u-pw-eye').addEventListener('click',function(){
-    var inp=document.getElementById('u-pw');
-    inp.type=inp.type==='password'?'text':'password';
-    document.getElementById('u-pw-eye').textContent=inp.type==='password'?'👁':'🙈';
-  });
   document.getElementById('mcf-x').addEventListener('click',function(){closeMo('mo-cf');});
   document.getElementById('mcf-n').addEventListener('click',function(){closeMo('mo-cf');});
   document.getElementById('b-addg').addEventListener('click',function(){openGModal(null);});
