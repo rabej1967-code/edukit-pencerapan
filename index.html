@@ -1137,8 +1137,10 @@ function skForcePwScreen(){
     '<div style="font-size:12.5px;color:#64748b;margin-bottom:14px">Kali pertama log masuk — sila tetapkan kata laluan baru.</div>'+
     '<input id="fpwNew" type="password" placeholder="Kata laluan baru (min. 6 aksara)" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #cbd5e1;margin-bottom:10px">'+
     '<input id="fpwConf" type="password" placeholder="Sahkan kata laluan" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #cbd5e1;margin-bottom:14px">'+
-    '<button onclick="skForcePwSubmit()" style="width:100%;padding:11px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer">Simpan &amp; Teruskan &rarr;</button>'+
+    '<button id="fpwBtn" style="width:100%;padding:11px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer">Simpan &amp; Teruskan &rarr;</button>'+
     '<div id="fpwErr" style="color:#ef4444;font-size:12px;margin-top:8px"></div>';
+  document.getElementById('fpwBtn').addEventListener('click', skForcePwSubmit);
+  document.getElementById('fpwConf').addEventListener('keydown',function(e){if(e.key==='Enter')skForcePwSubmit();});
 }
 async function skForcePwSubmit(){
   var nw=document.getElementById('fpwNew').value, cf=document.getElementById('fpwConf').value;
@@ -1147,8 +1149,6 @@ async function skForcePwSubmit(){
   if(nw!==cf){err.textContent='Tidak sepadan.';return}
   var res=await sbFetch('/auth/v1/user',{method:'PUT',body:JSON.stringify({password:nw})});
   if(!res.ok){err.textContent='Gagal tukar. Cuba lagi.';return}
-  var lRes=await sbFetch('/rest/v1/rpc/sk_set_password_lookup',{method:'POST',body:JSON.stringify({p_password:nw})});
-  if(!lRes.ok){err.textContent='Kata laluan ditukar tapi gagal kemaskini rekod carian. Hubungi admin.';return}
   await sbFetch('/rest/v1/skas_users?user_id=eq.'+SK_SESS.user_id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({must_change_password:false})});
   location.reload();
 }
